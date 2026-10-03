@@ -1,6 +1,5 @@
 node_modules/
 out/
-assets/res.dat
 .env
 *.log
 .scratch/
