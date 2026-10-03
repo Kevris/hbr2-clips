@@ -9,7 +9,7 @@ const { createCanvas } = require('canvas');
 // sin pérdida, mínima compresión: los frames son temporales y ffmpeg los lee una sola vez
 const PNG_OPTS = { compressionLevel: 1 };
 
-function createOfficialRenderer({ API, domShim, images, width, height, zoom = 1.5, overlays = true, camera = 'game', smooth = 0.2, ticksPerFrame = 1 }) {
+function createOfficialRenderer({ API, domShim, images, width, height, zoom = 1.5, overlays = true, camera = 'game' }) {
   const DefaultRenderer = require('node-haxball/examples/renderers/defaultRenderer.js');
   const canvas = createCanvas(width, height);
   canvas.style = {};
@@ -20,31 +20,29 @@ function createOfficialRenderer({ API, domShim, images, width, height, zoom = 1.
   renderer.initialize();
   renderer.zoomCoeff = zoom;
 
-  // cámara 'game': el seguimiento propio del juego, se acerca a la pelota 4% por frame, así que
-  // se queda atrás en jugadas rápidas. cámara 'ball': movemos la cámara nosotros, `smooth` es la
-  // fracción de la distancia a la pelota que se recorre por tick (1 = pegada a la pelota).
-  const followBall = camera === 'ball';
-  if (followBall) renderer.followMode = false;
-  const k = 1 - (1 - smooth) ** ticksPerFrame;
-  let lastTick = null;
-
-  function moveCamera(state, tick) {
-    const ball = state.gameState.physicsState.discs[0].pos;
-    const o = renderer.getOrigin();
-    // salta directo a la pelota en el primer frame y después de cualquier salto (entre ventanas de gol)
-    const snap = lastTick === null || tick - lastTick > ticksPerFrame * 2;
-    lastTick = tick;
-    renderer.setOrigin(snap ? { x: ball.x, y: ball.y } : { x: o.x + (ball.x - o.x) * k, y: o.y + (ball.y - o.y) * k });
-  }
+  // cámara 'game': el seguimiento propio del juego (se acerca a la pelota 4% por frame, así que
+  // se queda atrás en jugadas rápidas). cámaras 'ball'/'player': el origen lo calcula el que
+  // llama (ver src/camera.js, una instancia por ventana de gol) y se lo pasa a draw().
+  renderer.followMode = camera === 'game';
 
   return {
-    // state: replayReader.state, dtMs: cuántos ms de video representa este frame, tick: tick del replay
-    render(state, dtMs, tick) {
+    // avanza el reloj falso que anima la cámara/overlays del renderer - llamar una vez por tick
+    // renderizado, antes de draw() (aunque draw() se llame varias veces para ese tick, una por
+    // cada ventana de gol activa con su propia cámara)
+    advance(dtMs) { domShim.advanceClock(dtMs); },
+    // origin: { x, y, zoom? } en coordenadas del mapa (zoom opcional: escala en px por unidad, la
+    // usa la cámara 'cinema'), o null para dejar que el renderer siga solo (cámara 'game').
+    // Devuelve píxeles crudos BGRA (canvas.toBuffer('raw')), no un PNG: evita
+    // el costo de comprimir y luego descomprimir cada frame, que era buena parte del tiempo de
+    // render entero - ffmpeg los lee directo como rawvideo (ver src/framesToVideo.js).
+    draw(state, origin) {
       currentState = state;
-      domShim.advanceClock(dtMs);
-      if (followBall) moveCamera(state, tick);
+      if (origin) {
+        renderer.setOrigin(origin);
+        renderer.zoomCoeff = origin.zoom > 0 ? origin.zoom : zoom;
+      }
       renderer.render();
-      return canvas.toBuffer('image/png', PNG_OPTS);
+      return canvas.toBuffer('raw');
     },
     onTeamGoal(...args) { if (overlays) renderer.onTeamGoal(...args); },
     onGameStart(...args) { renderer.onGameStart(...args); },

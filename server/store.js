@@ -11,7 +11,7 @@ const MAX_AGE_MS = Number(process.env.MAX_AGE_MINUTES || 120) * 60 * 1000; // cu
 fs.mkdirSync(REPLAYS_DIR, { recursive: true });
 fs.mkdirSync(RENDERS_DIR, { recursive: true });
 
-// id -> { file, goals, totalGoals, createdAt }
+// id -> { file, goals, segments, totalGoals, createdAt }
 const replays = new Map();
 // id -> { status, replayId, dir, files, merged, error, createdAt }
 const jobs = new Map();
@@ -20,11 +20,11 @@ function newId() {
   return require('crypto').randomBytes(9).toString('base64url'); // corto y apto para URLs
 }
 
-function addReplay(buffer, goals, totalGoals) {
+function addReplay(buffer, goals, totalGoals, segments = []) {
   const id = newId();
   const file = path.join(REPLAYS_DIR, `${id}.hbr2`);
   fs.writeFileSync(file, buffer);
-  replays.set(id, { id, file, goals, totalGoals, createdAt: Date.now() });
+  replays.set(id, { id, file, goals, segments, totalGoals, createdAt: Date.now() });
   return id;
 }
 
